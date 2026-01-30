@@ -1,0 +1,89 @@
+name: Recce CI - Validate PR Changes
+on:
+  pull_request:
+    branches:
+      - stage
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate-changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+      - name: Install dependencies
+        run: |
+          uv sync --frozen
+          uv pip install recce-cloud
+          echo "✅ Installed dbt and recce-cloud"
+      - name: Install dbt packages
+        run: |
+          uv run dbt deps
+          echo "✅ Installed dbt packages"
+      - name: Create dbt profiles directory
+        run: mkdir -p $HOME/.dbt
+      - name: Set up Snowflake private key
+        env:
+          RECCE_SNOWFLAKE_PRIVATE_KEY: ${{ secrets.RECCE_SNOWFLAKE_PRIVATE_KEY }}
+        run: |
+          echo "$RECCE_SNOWFLAKE_PRIVATE_KEY" > $HOME/.dbt/snowflake_key.pem
+          chmod 600 $HOME/.dbt/snowflake_key.pem
+          echo "✅ Created Snowflake private key file"
+      - name: Set up dbt profile
+        env:
+          RECCE_SNOWFLAKE_USER: ${{ secrets.RECCE_SNOWFLAKE_USER }}
+          RECCE_SNOWFLAKE_ROLE: ${{ secrets.RECCE_SNOWFLAKE_ROLE }}
+          RECCE_SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.RECCE_SNOWFLAKE_PRIVATE_KEY_PASSPHRASE }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          cat > $HOME/.dbt/profiles.yml << EOF
+          metrodata:
+            target: dev
+            outputs:
+              dev:
+                type: snowflake
+                account: fqb43387.us-east-1
+                user: ${RECCE_SNOWFLAKE_USER}
+                role: ${RECCE_SNOWFLAKE_ROLE}
+                warehouse: DBT_STG_WH
+                database: METRODATA_STG
+                schema: PARADIME_TURBO_CI_PR_${PR_NUMBER}_BASE
+                private_key_path: $HOME/.dbt/snowflake_key.pem
+                private_key_passphrase: ${RECCE_SNOWFLAKE_PRIVATE_KEY_PASSPHRASE}
+                threads: 4
+                client_session_keep_alive: false
+          EOF
+          echo "✅ Created dbt profile with key pair authentication"
+      - name: Generate dbt artifacts
+        run: |
+          uv run dbt docs generate --target dev
+          echo "✅ Generated manifest.json and catalog.json"
+      - name: Upload PR artifacts to Recce Cloud
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          uv run recce-cloud upload
+          echo "✅ Uploaded PR artifacts to Recce Cloud"
+      - name: Summary
+        if: success()
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.head_ref }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          echo "## ✅ Recce PR Validation Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Successfully generated and uploaded PR artifacts to Recce Cloud" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Schema:** PARADIME_TURBO_CI_PR_${PR_NUMBER}_BASE" >> $GITHUB_STEP_SUMMARY
+          echo "**Database:** METRODATA_STG" >> $GITHUB_STEP_SUMMARY
+          echo "**PR:** #${PR_NUMBER}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${HEAD_REF}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${COMMIT_SHA}" >> $GITHUB_STEP_SUMMARY

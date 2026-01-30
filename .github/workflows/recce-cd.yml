@@ -1,0 +1,90 @@
+name: Recce CD - Update Baseline
+on:
+  push:
+    branches:
+      - stage
+  schedule:
+    # Run daily at 2 AM UTC to keep baseline fresh
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    # Allow manual triggering
+# Ensure only one CD run at a time
+concurrency:
+  group: recce-cd
+  cancel-in-progress: false
+jobs:
+  update-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Always check out stage for baseline artifacts, regardless of trigger
+          ref: stage
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+      - name: Install dependencies
+        run: |
+          uv sync --frozen
+          uv pip install recce-cloud
+          echo "✅ Installed dbt and recce-cloud"
+      - name: Install dbt packages
+        run: |
+          uv run dbt deps
+          echo "✅ Installed dbt packages"
+      - name: Create dbt profiles directory
+        run: mkdir -p $HOME/.dbt
+      - name: Set up Snowflake private key
+        env:
+          RECCE_SNOWFLAKE_PRIVATE_KEY: ${{ secrets.RECCE_SNOWFLAKE_PRIVATE_KEY }}
+        run: |
+          echo "$RECCE_SNOWFLAKE_PRIVATE_KEY" > $HOME/.dbt/snowflake_key.pem
+          chmod 600 $HOME/.dbt/snowflake_key.pem
+          echo "✅ Created Snowflake private key file"
+      - name: Set up dbt profile
+        env:
+          RECCE_SNOWFLAKE_USER: ${{ secrets.RECCE_SNOWFLAKE_USER }}
+          RECCE_SNOWFLAKE_ROLE: ${{ secrets.RECCE_SNOWFLAKE_ROLE }}
+          RECCE_SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.RECCE_SNOWFLAKE_PRIVATE_KEY_PASSPHRASE }}
+        run: |
+          cat > $HOME/.dbt/profiles.yml << EOF
+          metrodata:
+            target: base
+            outputs:
+              base:
+                type: snowflake
+                account: fqb43387.us-east-1
+                user: ${RECCE_SNOWFLAKE_USER}
+                role: ${RECCE_SNOWFLAKE_ROLE}
+                warehouse: DBT_STG_WH
+                database: METRODATA_STG
+                schema: base
+                private_key_path: $HOME/.dbt/snowflake_key.pem
+                private_key_passphrase: ${RECCE_SNOWFLAKE_PRIVATE_KEY_PASSPHRASE}
+                threads: 4
+                client_session_keep_alive: false
+          EOF
+          echo "✅ Created dbt profile with key pair authentication"
+      - name: Generate dbt artifacts
+        run: |
+          uv run dbt docs generate --target base
+          echo "✅ Generated manifest.json and catalog.json"
+      - name: Upload baseline to Recce Cloud
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          uv run recce-cloud upload --type prod
+          echo "✅ Uploaded baseline artifacts to Recce Cloud"
+      - name: Summary
+        if: success()
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          echo "## ✅ Recce Baseline Update Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Successfully generated and uploaded baseline artifacts to Recce Cloud" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Target:** base (METRODATA_STG.base)" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${REF_NAME}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${COMMIT_SHA}" >> $GITHUB_STEP_SUMMARY
