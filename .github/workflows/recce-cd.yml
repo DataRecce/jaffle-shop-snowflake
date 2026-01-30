@@ -30,7 +30,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --frozen
+          uv pip install -r requirements.txt
           uv pip install recce-cloud
           echo "✅ Installed dbt and recce-cloud"
 
@@ -46,7 +46,7 @@ jobs:
         env:
           RECCE_SNOWFLAKE_PRIVATE_KEY: ${{ secrets.RECCE_SNOWFLAKE_PRIVATE_KEY }}
         run: |
-          echo "$" > $HOME/.dbt/snowflake_key.pem
+          echo "$RECCE_SNOWFLAKE_PRIVATE_KEY" > $HOME/.dbt/snowflake_key.pem
           chmod 600 $HOME/.dbt/snowflake_key.pem
           echo "✅ Created Snowflake private key file"
 
@@ -67,7 +67,7 @@ jobs:
                 database: RECCE
                 schema: base
                 private_key_path: $HOME/.dbt/snowflake_key.pem
-                private_key_passphrase: ${}
+                private_key_passphrase: ${RECCE_SNOWFLAKE_PRIVATE_KEY_PASSPHRASE}
                 threads: 4
                 client_session_keep_alive: false
           EOF
