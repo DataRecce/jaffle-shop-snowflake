@@ -73,6 +73,7 @@ jobs:
 
       - name: Generate dbt artifacts
         run: |
+          uv run dbt build --target dev
           uv run dbt docs generate --target dev
           echo "✅ Generated manifest.json and catalog.json"
 
