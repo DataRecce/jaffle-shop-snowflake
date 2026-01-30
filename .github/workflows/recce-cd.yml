@@ -64,7 +64,7 @@ jobs:
                 account: kb22750.us-central1.gcp
                 user: RECCE
                 role: RECCE
-                warehouse: DBT_STG_WH
+                warehouse: LOAD_WH
                 database: RECCE
                 schema: base
                 private_key_path: $HOME/.dbt/snowflake_key.pem
