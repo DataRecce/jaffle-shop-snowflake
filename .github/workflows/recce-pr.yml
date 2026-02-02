@@ -1,0 +1,46 @@
+name: Recce PR Review
+
+on:
+  pull_request:
+    branches: [main]
+
+env:
+  # dbt connection (using environment variables for Snowflake)
+  # Configure these secrets in your repository settings
+  SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+  SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+  SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+  SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+  SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+  SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+
+jobs:
+  recce-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv pip install dbt-core dbt-snowflake --system
+
+      - name: Run dbt deps
+        run: dbt deps
+
+      - name: Run dbt build
+        run: dbt build
+
+      - name: Generate dbt docs
+        run: dbt docs generate
+
+      - name: Upload to Recce Cloud
+        run: uvx recce-cloud upload
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
