@@ -1,0 +1,50 @@
+name: Recce CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  recce-ci:
+    name: Recce CI
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dbt
+        run: uv pip install dbt-core dbt-snowflake --system
+
+      - name: Install Recce
+        run: uv pip install recce[dbt-snowflake] --system
+
+      - name: Download base artifacts from Recce Cloud
+        run: recce-cloud download --type base
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare dbt
+        run: |
+          dbt deps
+
+      - name: Run dbt on PR branch
+        run: |
+          dbt run --target pr
+          dbt docs generate --target pr
+
+      - name: Run Recce
+        run: recce run
+
+      - name: Upload to Recce Cloud
+        run: recce-cloud upload
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
