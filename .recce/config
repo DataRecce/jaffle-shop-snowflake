@@ -1,0 +1,6 @@
+version: 1
+cloud:
+  org_id: '11'
+  project_id: '34'
+  bound_at: '2026-02-02T08:32:44.779942+00:00'
+  bound_by: evenwei@infuseai.io
