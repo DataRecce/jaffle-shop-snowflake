@@ -1,0 +1,45 @@
+name: Update Recce Production Baseline
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: recce-prod
+  cancel-in-progress: true
+
+jobs:
+  update-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv pip install dbt-core dbt-snowflake --system
+
+      - name: Set up dbt credentials
+        run: |
+          mkdir -p ~/.dbt
+          echo "${{ secrets.DBT_PROFILES_YML }}" > ~/.dbt/profiles.yml
+
+      - name: Build production models
+        run: |
+          dbt deps
+          dbt build
+
+      - name: Generate production artifacts
+        run: dbt docs generate
+
+      - name: Upload to Recce Cloud
+        run: uvx recce-cloud upload --type prod
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
