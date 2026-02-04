@@ -34,7 +34,7 @@ jobs:
         run: |
           uv venv
           source .venv/bin/activate
-          uv pip install dbt-snowflake
+          uv pip install dbt-snowflake recce-cloud
 
       - name: Set up dbt profiles
         run: |
@@ -60,3 +60,11 @@ jobs:
           source .venv/bin/activate
           dbt deps
           dbt build --target prod
+          dbt docs generate
+
+      - name: Upload production baseline to Recce Cloud
+        run: |
+          source .venv/bin/activate
+          recce-cloud upload --type prod
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
